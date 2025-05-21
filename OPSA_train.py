@@ -654,7 +654,7 @@ Returns:
 
 
 # ===============================
-# 主函数
+# main
 # ===============================
 def main():
     parser = argparse.ArgumentParser(description="Adversarial ConfTr: Adversarial Training with Coverage Guarantees")
