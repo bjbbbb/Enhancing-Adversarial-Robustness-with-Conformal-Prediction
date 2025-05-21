@@ -184,7 +184,7 @@ def generate_and_save_attacked_data(model, device, loader, eps, atkIter, lr, T, 
 
 def main():
     parser = argparse.ArgumentParser(description='OPSA')
-    parser.add_argument('--save_dir', type=str, default='E:/adversarial/attack/attacked_data_OPSA')
+    parser.add_argument('--save_dir', type=str, default='/attacked_data_OPSA')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--epsilon', type=float, default=0.03)
     parser.add_argument('--atkIter', type=int, default=10)
@@ -224,7 +224,7 @@ def main():
             model.load_state_dict(torch.load(dataset['model_path'], map_location=device, weights_only=True))
         model.eval()
 
-        T = dataset.get('T', 1.0)  # 或者使用 T = dataset['T']
+        T = dataset.get('T', 1.0) 
 
         if calibrate_loader is not None:
             calibrate_save_dir = os.path.join(
