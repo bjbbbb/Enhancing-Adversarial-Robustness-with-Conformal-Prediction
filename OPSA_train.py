@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms, models
 
 # ===============================
-# 日志配置
+# Log Configuration
 # ===============================
 logging.basicConfig(
     level=logging.INFO,
@@ -26,20 +26,17 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 # ===============================
-# 攻击方法定义
+# Definition of Attack Methods
 # ===============================
 def maximize_prediction_set_opsa(model, device, x, y, eps, atkIter=10, lr=0.1, T=1.0, norm='l_inf'):
-    """优化后的最大化预测集攻击实现"""
+    """Implementation of optimized maximum prediction set attack"""
     model.eval()
     batch_size = x.shape[0]
 
-    num_attempts = 2  # 每次尝试2个不同的初始扰动
+    num_attempts = 2 
 
-    # 扩展批量以包含尝试次数
     x_adv = x.unsqueeze(1).repeat(1, num_attempts, 1, 1, 1).detach()
-    # 初始化扰动：在原始图像附近随机扰动
     x_adv = x_adv + (torch.rand_like(x_adv) * 2 * eps - eps)
-    # 确保扰动后的图像在 [0,1] 范围内
     x_adv = torch.clamp(x_adv, 0, 1).requires_grad_(True)
 
     optimizer = optim.Adam([x_adv], lr=lr)
@@ -50,30 +47,25 @@ def maximize_prediction_set_opsa(model, device, x, y, eps, atkIter=10, lr=0.1, T
     for itr in range(atkIter):
         optimizer.zero_grad()
 
-        # 分批处理扰动以减少内存使用
         sub_batch_size = 2
         for j in range(0, num_attempts, sub_batch_size):
             current_x_adv = x_adv[:, j:min(j + sub_batch_size, num_attempts)].reshape(-1, *x.shape[1:])
 
             logits = model(current_x_adv)
-            logits = torch.clamp(logits, min=-50, max=50)  # 限制logits范围
+            logits = torch.clamp(logits, min=-50, max=50) 
             logits = logits.view(batch_size, -1, logits.shape[-1])
 
-            # 获取真实类别的logits
             true_logits = torch.gather(logits, 2, y.view(batch_size, 1, 1).expand(-1, logits.shape[1], 1))
             margin = logits - true_logits
 
-            # 计算损失
             sigma = torch.sigmoid(margin / T)
             sum_sigma = sigma.sum(dim=2)
 
             loss = -sum_sigma.mean()
             loss.backward()
 
-        # 更新
         optimizer.step()
-
-        # 投影到允许的扰动范围内
+        
         with torch.no_grad():
             if norm == 'l_inf':
                 delta = torch.clamp(x_adv.data - x.unsqueeze(1), min=-eps, max=eps)
@@ -82,7 +74,6 @@ def maximize_prediction_set_opsa(model, device, x, y, eps, atkIter=10, lr=0.1, T
 
         torch.cuda.empty_cache()
 
-    # 最终评估和选择最佳扰动
     with torch.no_grad():
         for j in range(num_attempts):
             current_x_adv = x_adv[:, j]
@@ -96,7 +87,6 @@ def maximize_prediction_set_opsa(model, device, x, y, eps, atkIter=10, lr=0.1, T
             sigma = torch.sigmoid(margin / T)
             sum_sigma = sigma.sum(dim=1)
 
-            # 更新最佳结果
             update_mask = sum_sigma > best_margins
             best_margins[update_mask] = sum_sigma[update_mask]
             best_perturbed[update_mask] = current_x_adv[update_mask]
@@ -106,7 +96,7 @@ def maximize_prediction_set_opsa(model, device, x, y, eps, atkIter=10, lr=0.1, T
     return best_perturbed, best_margins
 
 # ===============================
-# 模型定义
+# Model Definition
 # ===============================
 import torch
 import torch.nn as nn
@@ -221,19 +211,14 @@ def PreActResNet18(num_classes=10, input_channels=3):
 
 def get_model(dataset_name, num_classes, input_channels=3):
     """
-    根据数据集名称返回适当的模型。
-    对于 CIFAR10 数据集，使用 ResNet34。
-    对于 ImageNetMini 数据集，使用 ResNet50。
-    对于 CIFAR100 数据集，使用 PreAct ResNet。
+Parameters:
+    dataset_name (str): Name of the dataset. Supported datasets include 'CIFAR10', 'CIFAR100', 'ImageNetMini'.
+    num_classes (int): Number of classes in the dataset.
+    input_channels (int): Number of input channels (e.g., 3 for RGB images).
 
-    参数:
-        dataset_name (str): 数据集名称，支持 'CIFAR10', 'CIFAR100', 'ImageNetMini'。
-        num_classes (int): 类别数量。
-        input_channels (int): 输入通道数（对于RGB图像为3）。
-
-    返回:
-        model (nn.Module): 配置好的模型。
-        model_type (str): 模型类型，如 'resnet34', 'resnet50' 或 'preact_resnet'。
+Returns:
+    model (nn.Module): The configured model.
+    model_type (str): Type of the model, such as 'resnet34', 'resnet50', or 'preact_resnet'.
     """
     if dataset_name == 'CIFAR100':
         model = models.resnet34(pretrained=False, num_classes=num_classes)
@@ -242,7 +227,6 @@ def get_model(dataset_name, num_classes, input_channels=3):
         model = models.resnet34(pretrained=False, num_classes=num_classes)
         model_type = 'resnet34'
     elif dataset_name == 'ImageNetMini':
-        # 使用自定义的 PreActResNet18
         model = models.resnet50(pretrained=False, num_classes=num_classes)
         model_type = 'resnet50'
     else:
@@ -250,24 +234,21 @@ def get_model(dataset_name, num_classes, input_channels=3):
         model_type = 'preact_resnet18'
 
     if input_channels != 3 and dataset_name in ['CIFAR10', 'CIFAR100']:
-        # 修改标准 ResNet 的第一层
         model.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
 
     return model, model_type
 
 # ===============================
-# 模型权重初始化（从头开始）
+# Model weight initialization
 # ===============================
 def initialize_model(model, device):
     """
-    初始化模型权重并移动到指定设备。
+Parameters:
+    model (nn.Module): The model to be initialized.
+    device (torch.device): The device (e.g., CPU or GPU) on which the model will be initialized.
 
-    参数:
-        model (nn.Module): 要初始化的模型。
-        device (torch.device): 设备。
-
-    返回:
-        model (nn.Module): 初始化后的模型。
+Returns:
+    model (nn.Module): The initialized model.
     """
     def init_weights(m):
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
@@ -279,28 +260,16 @@ def initialize_model(model, device):
     return model
 
 # ===============================
-# 加载数据划分索引
+# Load data partitioning index
 # ===============================
 def load_split_indices(dataset_name, split='split1', root_dir='/home/kaiyuan/PycharmProjects/icml_adversarial/data_splits'):
-    """
-    加载指定划分的数据索引。
-
-    参数:
-        dataset_name (str): 数据集名称。
-        split (str): 划分名称，如 'split1', 'split2'。
-        root_dir (str): 划分索引文件的根目录。
-
-    返回:
-        np.ndarray: 索引数组。
-    """
     if 'split1' in split or 'scheme1' in split:
         split_num = '1'
     elif 'split2' in split or 'scheme2' in split:
         split_num = '2'
     else:
-        raise ValueError("split 参数必须包含 'split1' 或 'split2'")
+        raise ValueError("The split parameter must contain either 'split 1' or 'split 2'")
 
-    # 如果是 ImageNetMini，则更改文件夹名称
     if dataset_name.lower() == 'imagenetmini':
         folder_name = 'mini-imagenet'
     else:
@@ -308,28 +277,14 @@ def load_split_indices(dataset_name, split='split1', root_dir='/home/kaiyuan/Pyc
 
     split_path = os.path.join(root_dir, folder_name, f'split{split_num}', 'train_adv_indices.npy')
     if not os.path.exists(split_path):
-        raise FileNotFoundError(f"{split_path} 不存在。请先运行数据划分脚本.")
+        raise FileNotFoundError(f"{split_path} non-existent. Please run the data partitioning script first.")
     indices = np.load(split_path)
     return indices
 
 # ===============================
-# 数据加载器定义
+# Definition of Data Loader
 # ===============================
 def get_dataloader(dataset_name, split, batch_size=128, root_dir='/home/kaiyuan/PycharmProjects/icml_adversarial/data_splits'):
-    """
-    获取数据加载器，仅处理单一数据划分。
-
-    参数:
-        dataset_name (str): 数据集名称，支持 'CIFAR10', 'CIFAR100', 'ImageNetMini'。
-        split (str): 划分名称，包含 'split1' 或 'split2'。
-        batch_size (int): 批大小。
-        root_dir (str): 划分文件的根目录。
-
-    返回:
-        DataLoader: 数据加载器。
-        mean (torch.Tensor): 数据集均值（形状为 (1, 3, 1, 1)）。
-        std (torch.Tensor): 数据集标准差（形状为 (1, 3, 1, 1)）。
-    """
     if dataset_name == 'CIFAR10':
         mean = [0.4914, 0.4822, 0.4465]
         std = [0.2023, 0.1994, 0.2010]
@@ -338,7 +293,7 @@ def get_dataloader(dataset_name, split, batch_size=128, root_dir='/home/kaiyuan/
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
         ])
-        dataset = datasets.CIFAR10('/home/kaiyuan/PycharmProjects/icml_adversarial/data', train=True, download=True, transform=transform)
+        dataset = datasets.CIFAR10('/data', train=True, download=True, transform=transform)
     elif dataset_name == 'CIFAR100':
         mean = [0.5071, 0.4867, 0.4408]
         std = [0.2675, 0.2565, 0.2761]
@@ -347,7 +302,7 @@ def get_dataloader(dataset_name, split, batch_size=128, root_dir='/home/kaiyuan/
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
         ])
-        dataset = datasets.CIFAR100('/home/kaiyuan/PycharmProjects/icml_adversarial/data', train=True, download=True, transform=transform)
+        dataset = datasets.CIFAR100('/data', train=True, download=True, transform=transform)
     elif dataset_name.lower() == 'imagenetmini':
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
@@ -357,35 +312,23 @@ def get_dataloader(dataset_name, split, batch_size=128, root_dir='/home/kaiyuan/
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
         ])
-        # 注意：请确保此处路径与实际数据存放路径一致
-        data_dir = os.path.join('/home/kaiyuan/PycharmProjects/icml_adversarial/data', 'mini-imagenet', 'train')
+        data_dir = os.path.join('/data', 'mini-imagenet', 'train')
         dataset = datasets.ImageFolder(root=data_dir, transform=transform)
     else:
-        raise ValueError("不支持的数据集。请选择 'CIFAR10', 'CIFAR100' 或 'ImageNetMini'。")
+        raise ValueError("Unsupported dataset. Please select 'CIFAR10', 'CIFAR100' or 'ImageNetMini'.")
 
     indices = load_split_indices(dataset_name, split=split, root_dir=root_dir)
     subset = Subset(dataset, indices)
-    shuffle = True  # 训练时打乱数据
+    shuffle = True  
     num_workers = 2 if os.name != 'nt' else 0
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     loader = DataLoader(subset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return loader, torch.tensor(mean).view(1, 3, 1, 1).to(device), torch.tensor(std).view(1, 3, 1, 1).to(device)
 
 # ===============================
-# 训练辅助函数
+# conformal training
 # ===============================
 def compute_size_loss(probs, tau, T_train):
-    """
-    计算大小损失。
-
-    参数:
-        probs (torch.Tensor): 预测概率，形状为 (batch_size, num_classes)。
-        tau (float): 阈值。
-        T_train (float): 温度参数。
-
-    返回:
-        torch.Tensor: 大小损失。
-    """
     clamped_input = torch.clamp((probs - tau) / T_train, min=-50.0, max=50.0)
     C_pred_sigmoid = torch.sigmoid(clamped_input)
     probs = torch.clamp(probs, min=1e-7, max=1-1e-7)
@@ -393,39 +336,29 @@ def compute_size_loss(probs, tau, T_train):
     return size_loss
 
 def compute_accuracy(outputs, labels):
-    """
-    计算预测准确度。
-
-    参数:
-        outputs (torch.Tensor): 模型输出的 logits，形状为 (batch_size, num_classes)。
-        labels (torch.Tensor): 真实标签，形状为 (batch_size,)。
-
-    返回:
-        float: 准确度（0到1之间）。
-    """
     preds = torch.argmax(outputs, dim=1)
     correct = (preds == labels).sum().item()
     total = labels.size(0)
     return correct / total
 
 # ===============================
-# 标准训练函数
+# Standard training function
 # ===============================
 def train_standard(model, train_loader, device, num_epochs, optimizer, scheduler=None, scaler=None):
     """
-    标准训练循环，使用交叉熵损失。
+Standard training loop using cross-entropy loss.
 
-    参数:
-        model (nn.Module): 要训练的模型。
-        train_loader (DataLoader): 训练数据加载器。
-        device (torch.device): 设备。
-        num_epochs (int): 训练轮数。
-        optimizer (torch.optim.Optimizer): 优化器。
-        scheduler (torch.optim.lr_scheduler, optional): 学习率调度器。
-        scaler (torch.cuda.amp.GradScaler, optional): 混合精度梯度缩放器。
+Parameters:
+    model (nn.Module): The model to be trained.
+    train_loader (DataLoader): The training data loader.
+    device (torch.device): The device (e.g., CPU or GPU) on which the training will be performed.
+    num_epochs (int): The number of training epochs.
+    optimizer (torch.optim.Optimizer): The optimizer used for training.
+    scheduler (torch.optim.lr_scheduler, optional): The learning rate scheduler (optional).
+    scaler (torch.cuda.amp.GradScaler, optional): The gradient scaler for mixed-precision training (optional).
 
-    返回:
-        model (nn.Module): 训练后的模型。
+Returns:
+    model (nn.Module): The trained model.
     """
     criterion = nn.CrossEntropyLoss()
 
@@ -479,29 +412,27 @@ def train_standard(model, train_loader, device, num_epochs, optimizer, scheduler
                 })
 
         if num_batches == 0:
-            logger.warning("本轮训练未处理任何批次。")
+            logger.warning("This round of training did not process any batches.")
             continue
 
         avg_loss = epoch_loss / num_batches
         avg_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0.0
 
-        logger.info(f"** 标准训练 Epoch {epoch}: 平均损失={avg_loss:.4f}, 准确度={avg_accuracy:.4f} **")
+        logger.info(f"** Standard Training Epoch {epoch}: Average loss={avg_loss:.4f}, Accuracy={avg_accuracy:.4f} **")
     return model
 
 # ===============================
-# 训练函数（对抗训练）
+# Adversarial training
 # ===============================
 def save_model(model, save_dir, dataset_name, scheme, model_type, epoch=None):
     """
-    保存模型到指定路径。
-
-    参数:
-        model (nn.Module): 要保存的模型。
-        save_dir (str): 保存目录。
-        dataset_name (str): 数据集名称。
-        scheme (str): 划分方案，如 'scheme1' 或 'phase1_and_phase2'。
-        model_type (str): 模型类型，如 'resnet34' 或 'resnet50'。
-        epoch (int, optional): 当前训练轮数。如果提供，将添加到文件名中。
+    Parameters:
+    model (nn.Module): The model to be saved.
+    save_dir (str): The directory where the model will be saved.
+    dataset_name (str): The name of the dataset used for training.
+    scheme (str): The partitioning scheme (e.g., 'scheme1' or 'phase1_and_phase2').
+    model_type (str): The type of the model (e.g., 'resnet34' or 'resnet50').
+    epoch (int, optional): The current training epoch. If provided, it will be appended to the filename.
     """
     os.makedirs(save_dir, exist_ok=True)
 
@@ -511,7 +442,7 @@ def save_model(model, save_dir, dataset_name, scheme, model_type, epoch=None):
         model_save_path = os.path.join(save_dir, f"{dataset_name.lower()}_{scheme}_{model_type}.pth")
 
     torch.save(model.state_dict(), model_save_path)
-    logger.info(f"模型已保存到 {model_save_path}")
+    logger.info(f"The model has been saved to {model_save_path}")
 
 
 def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_train,
@@ -528,37 +459,37 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                  model_type=None,
                  save_interval=10):
     """
-    对抗训练循环，使用 conformal 机制。
+    Adversarial training loop with a conformal mechanism.
 
-    参数:
-        model (nn.Module): 要训练的模型。
-        conformal_train_loader (DataLoader): 校准训练数据加载器。
-        alpha (float): 置信水平参数。
-        device (torch.device): 设备。
-        num_epochs (int): 训练轮数。
-        T_train (float): 训练温度参数。
-        optimizer (torch.optim.Optimizer): 优化器。
-        scheduler (torch.optim.lr_scheduler, optional): 学习率调度器。
-        lambda_weight (float): 大小损失的权重。
-        scaler (torch.cuda.amp.GradScaler, optional): 混合精度梯度缩放器。
-        atk_epsilon (float): 对抗攻击的扰动大小。
-        atk_atkIter (int): 对抗攻击的迭代次数。
-        atk_lr (float): 对抗攻击的学习率。
-        atk_T (float): 对抗攻击的温度参数。
-        atk_norm (str): 对抗攻击的范数类型。
-        save_dir (str, optional): 模型保存目录。
-        model_type (str, optional): 模型类型。
-        save_interval (int, optional): 保存模型的间隔轮数。
+Parameters:
+    model (nn.Module): The model to be trained.
+    conformal_train_loader (DataLoader): The calibration training data loader for the conformal mechanism.
+    alpha (float): The confidence level parameter for the conformal mechanism.
+    device (torch.device): The device (e.g., CPU or GPU) on which the training will be performed.
+    num_epochs (int): The number of training epochs.
+    T_train (float): The temperature parameter for training.
+    optimizer (torch.optim.Optimizer): The optimizer used for training.
+    scheduler (torch.optim.lr_scheduler, optional): The learning rate scheduler (optional).
+    lambda_weight (float): The weight for the size loss term.
+    scaler (torch.cuda.amp.GradScaler, optional): The gradient scaler for mixed-precision training (optional).
+    atk_epsilon (float): The perturbation size for adversarial attacks.
+    atk_atkIter (int): The number of iterations for adversarial attacks.
+    atk_lr (float): The learning rate for adversarial attacks.
+    atk_T (float): The temperature parameter for adversarial attacks.
+    atk_norm (str): The norm type for adversarial attacks (e.g., 'Linf' or 'L2').
+    save_dir (str, optional): The directory where the model will be saved (optional).
+    model_type (str, optional): The type of the model (optional).
+    save_interval (int, optional): The interval (in epochs) at which the model will be saved (optional).
 
-    返回:
-        model (nn.Module): 训练后的模型。
-        best_loss (float): 训练过程中达到的最佳损失值。
+Returns:
+    model (nn.Module): The trained model.
+    best_loss (float): The best loss value achieved during the training process.
     """
     best_loss = float('-inf')
     best_model_state = None
 
     for epoch in range(1, num_epochs + 1):
-        logger.info(f"Epoch {epoch}/{num_epochs}: 启用对抗训练。")
+        logger.info(f"Epoch {epoch}/{num_epochs}: Enable adversarial training.")
         model.train()
 
         epoch_size_loss = 0.0
@@ -567,13 +498,12 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
         epoch_total = 0
         num_batches = 0
 
-        batch_iterator = tqdm(conformal_train_loader, desc=f"对抗训练 Epoch {epoch}/{num_epochs}", leave=False)
+        batch_iterator = tqdm(conformal_train_loader, desc=f"Adversarial training Epoch {epoch}/{num_epochs}", leave=False)
         for batch in batch_iterator:
             inputs, labels = batch
             inputs = inputs.to(device)
             labels = labels.to(device)
 
-            # 生成对抗样本
             try:
                 inputs_adv, _ = maximize_prediction_set_opsa(
                     model=model,
@@ -587,7 +517,7 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                     norm=atk_norm
                 )
             except Exception as e:
-                logger.error(f"生成对抗样本时发生错误: {e}")
+                logger.error(f"An error occurred while generating adversarial samples: {e}")
                 continue
 
             combined_inputs = torch.cat([inputs, inputs_adv], dim=0)
@@ -604,26 +534,26 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                     probs_calib = nn.functional.softmax(outputs_calib, dim=1)
                     scores_calib = probs_calib.gather(1, Bcal_labels.view(-1, 1)).squeeze().cpu().numpy()
                     if len(scores_calib) == 0:
-                        logger.warning("scores_calib 为空，跳过此次批次优化。")
+                        logger.warning("scores_calib Empty, skip this batch optimization.")
                         continue
                     tau = np.quantile(scores_calib, 1 - alpha * (1 + 1 / len(scores_calib)))
                     tau = np.clip(tau, 1e-5, 1 - 1e-5)
-                    logger.debug(f"  重新计算 tau: {tau:.4f}")
+                    logger.debug(f"  recalculate tau: {tau:.4f}")
                 else:
-                    logger.warning("校准集为空，跳过此次批次优化。")
+                    logger.warning("The calibration set is empty, skip this batch optimization.")
                     continue
 
             with autocast(enabled=(scaler is not None)):
                 outputs_train = model(Btrain_inputs)
                 probs_train = nn.functional.softmax(outputs_train, dim=1)
                 if torch.any(torch.isnan(probs_train)) or torch.any(torch.isinf(probs_train)):
-                    logger.error("probs_train 包含 NaN 或 Inf，跳过此次优化。")
+                    logger.error("Probs_train contains NaN or Inf, skip this optimization.")
                     continue
                 probs_train = torch.clamp(probs_train, min=1e-7, max=1 - 1e-7)
                 clamped_input = torch.clamp((probs_train - tau) / T_train, min=-50.0, max=50.0)
                 sigma = torch.sigmoid(clamped_input)
                 if torch.any(torch.isnan(sigma)) or torch.any(torch.isinf(sigma)):
-                    logger.error("sigma 包含 NaN 或 Inf，跳过此次优化。")
+                    logger.error("Sigma contains NaN or Inf, skip this optimization.")
                     continue
                 one_hot_labels = torch.nn.functional.one_hot(Btrain_labels, num_classes=probs_train.size(1)).float().to(
                     device)
@@ -632,10 +562,10 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                 L_size = sigma.sum(dim=1).mean()
                 loss = L_class + lambda_weight * L_size
                 logger.debug(
-                    f"  计算损失: L_class={L_class.item():.4f}, L_size={L_size.item():.4f}, Loss={loss.item():.4f}")
+                    f"  computer losses: L_class={L_class.item():.4f}, L_size={L_size.item():.4f}, Loss={loss.item():.4f}")
 
             if torch.isnan(loss) or torch.isinf(loss):
-                logger.warning(f"发现NaN或Inf损失，跳过此次优化。loss={loss.item()}")
+                logger.warning(f"Found NaN or Inf loss, skip this optimization. loss={loss.item()}")
                 continue
 
             optimizer.zero_grad()
@@ -651,7 +581,7 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                 for name, param in model.named_parameters():
                     if param.grad is not None:
                         if torch.any(torch.isnan(param.grad)) or torch.any(torch.isinf(param.grad)):
-                            logger.error(f"参数 {name} 的梯度包含 NaN 或 Inf，跳过此次优化。")
+                            logger.error(f"Skipping optimization step due to NaN or Inf gradients in parameter {name}.")
                             skip_step = True
                             break
                 if skip_step:
@@ -683,7 +613,7 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                 })
 
         if num_batches == 0:
-            logger.warning("本轮训练未处理任何批次。")
+            logger.warning("This round of training did not process any batches.")
             continue
 
         avg_L_class = epoch_class_loss / num_batches
@@ -692,17 +622,15 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
         avg_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0.0
 
         logger.info(
-            f"  平均损失: L_class={avg_L_class:.4f}, L_size={avg_L_size:.4f}, 总损失={total_avg_loss:.4f}, 准确度={avg_accuracy:.4f}")
+            f"  Average loss: L_class={avg_L_class:.4f}, L_size={avg_L_size:.4f}, total loss={total_avg_loss:.4f}, Accuracy={avg_accuracy:.4f}")
 
         if total_avg_loss > best_loss:
             best_loss = total_avg_loss
             best_model_state = model.state_dict().copy()
-            logger.info(f"  新的最佳损失: {best_loss:.4f}")
+            logger.info(f"  New Best Loss: {best_loss:.4f}")
 
-        # 每隔 save_interval 轮保存一次模型
         if save_dir is not None and model_type is not None and epoch % save_interval == 0:
             current_model_state = model.state_dict().copy()
-            # 临时加载最佳模型状态用于保存
             if best_model_state is not None:
                 model.load_state_dict(best_model_state)
 
@@ -714,14 +642,13 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
                 model_type=model_type,
                 epoch=epoch
             )
-            logger.info(f"  在第 {epoch} 轮保存了当前最佳模型")
+            logger.info(f"Saved the current best model at epoch {epoch}.")
 
-            # 恢复当前模型状态继续训练
             model.load_state_dict(current_model_state)
 
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
-        logger.info(f"恢复最佳模型状态，最佳损失: {best_loss:.4f}")
+        logger.info(f"{best_loss:.4f}")
 
     return model, best_loss
 
@@ -730,79 +657,74 @@ def train_conftr(model, conformal_train_loader, alpha, device, num_epochs, T_tra
 # 主函数
 # ===============================
 def main():
-    parser = argparse.ArgumentParser(description="基于覆盖保证的对抗训练（Adversarial ConfTr）")
+    parser = argparse.ArgumentParser(description="Adversarial ConfTr: Adversarial Training with Coverage Guarantees")
 
-    # 训练参数
-    parser.add_argument('--standard_epochs', type=int, default=10, help='标准训练的训练轮数')
-    parser.add_argument('--conftr_epochs', type=int, default=40, help='对抗训练的训练轮数')  # 修改为40轮
-    parser.add_argument('--save_interval', type=int, default=10, help='保存模型的间隔轮数')
-    parser.add_argument('--batch-size', type=int, default=64, help='批大小')
-    parser.add_argument('--model_lr', type=float, default=0.005, help='模型优化器学习率')
+    # Training parameters
+    parser.add_argument('--standard_epochs', type=int, default=5, help='The number of training rounds for standard training')
+    parser.add_argument('--conftr_epochs', type=int, default=40, help='The number of training rounds for adversarial training')  
+    parser.add_argument('--save_interval', type=int, default=10, help='Save the number of interval rounds for the model')
+    parser.add_argument('--batch-size', type=int, default=64, help='batch size')
+    parser.add_argument('--model_lr', type=float, default=0.005, help='Model optimizer learning rate')
 
-    # 数据划分参数
-    parser.add_argument('--root_dir', type=str, default='/home/kaiyuan/PycharmProjects/icml_adversarial/data_splits',
-                        help='数据集划分文件的根目录')
+    # Data partitioning parameters
+    parser.add_argument('--root_dir', type=str, default='/data_splits')
 
-    # 保存参数
-    parser.add_argument('--save_dir', type=str, default='/home/kaiyuan/PycharmProjects/icml_adversarial/saved_models',
-                        help='训练好的模型保存目录')
+    # Save parameters
+    parser.add_argument('--save_dir', type=str, default='saved_models')
 
-    # 训练配置
-    parser.add_argument('--alpha', type=float, default=0.10, help='置信水平参数')
-    parser.add_argument('--T_train', type=float, default=1, help='训练温度参数')
-    parser.add_argument('--lambda_weight', type=float, default=5, help='大小损失的权重')
+    # Training configuration
+    parser.add_argument('--alpha', type=float, default=0.10, help='Confidence level parameter')
+    parser.add_argument('--T_train', type=float, default=1, help='Training temperature parameters')
+    parser.add_argument('--lambda_weight', type=float, default=5, help='Weight of size loss')
 
-    # 对抗训练配置
-    parser.add_argument('--atk_epsilon', type=float, default=0.03, help='对抗攻击的扰动大小')
-    parser.add_argument('--atk_atkIter', type=int, default=10, help='对抗攻击的迭代次数')
-    parser.add_argument('--atk_lr', type=float, default=0.1, help='对抗攻击的学习率')
-    parser.add_argument('--atk_T', type=float, default=1.0, help='对抗攻击的温度参数')
-    parser.add_argument('--atk_norm', type=str, default='l_inf', choices=['l_inf'], help='对抗攻击的范数类型')
+    # Adversarial training configuration
+    parser.add_argument('--atk_epsilon', type=float, default=0.03, help='The disturbance size of adversarial attacks')
+    parser.add_argument('--atk_atkIter', type=int, default=10, help='The number of iterations for adversarial attacks')
+    parser.add_argument('--atk_lr', type=float, default=0.1, help='Learning rate of adversarial attacks')
+    parser.add_argument('--atk_T', type=float, default=1.0, help='Temperature parameters for countering attacks')
+    parser.add_argument('--atk_norm', type=str, default='l_inf', choices=['l_inf'], help='Norm types for adversarial attacks')
 
-    # 设备参数
-    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='使用的设备')
+    # Equipment parameters
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'])
 
-    # 优化器和调度器
-    parser.add_argument('--use_scheduler', type=lambda x: (str(x).lower() == 'true'), default=False,
-                        help='是否使用学习率调度器')
+    # Optimizer and Scheduler
+    parser.add_argument('--use_scheduler', type=lambda x: (str(x).lower() == 'true'), default=False)
 
-    # 混合精度训练
-    parser.add_argument('--disable_amp', type=lambda x: (str(x).lower() == 'true'), default=False,
-                        help='是否禁用混合精度训练')
+    # Mixed precision training
+    parser.add_argument('--disable_amp', type=lambda x: (str(x).lower() == 'true'), default=False)
 
     args = parser.parse_args()
 
     if args.T_train <= 0:
-        raise ValueError("T_train 必须为正数。")
+        raise ValueError("T_train must be a positive number.")
     if args.alpha <= 0 or args.alpha >= 1:
-        raise ValueError("alpha 必须在 (0, 1) 区间内。")
+        raise ValueError("Alpha must be within the interval (0, 1).")
     if args.lambda_weight < 0:
-        raise ValueError("lambda_weight 必须为非负数。")
+        raise ValueError("lambda_weight must be a non-negative number.")
     if args.model_lr <= 0:
-        raise ValueError("model_lr 必须为正数。")
+        raise ValueError("model_lr must be a positive number.")
     if args.atk_epsilon < 0:
-        raise ValueError("atk_epsilon 必须为非负数。")
+        raise ValueError("Atk_epsilon must be non negative.")
     if args.atk_atkIter <= 0:
-        raise ValueError("atk_atkIter 必须为正整数。")
+        raise ValueError("Atk_atkIter must be a positive integer.")
     if args.atk_lr <= 0:
-        raise ValueError("atk_lr 必须为正数。")
+        raise ValueError("Atk_lr must be a positive number.")
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-    logger.info(f'使用设备: {device}')
+    logger.info(f'Using equipment: {device}')
 
-    # 数据集列表，可同时包含 CIFAR100 和 ImageNetMini 实验（根据需要选择）
-    datasets_list = ['ImageNetMini']
+    datasets_list = ['CIFAR10', 'CIFAR100', 'ImageNetMini']
     model_save_root = args.save_dir
 
     if not args.disable_amp and device.type == 'cuda':
         scaler = GradScaler()
-        logger.info("启用混合精度训练 (AMP)。")
+        logger.info("Enable mixed precision training (AMP)")
     else:
         scaler = None
-        logger.info("禁用混合精度训练 (AMP)。")
+        logger.info("Disable mixed precision training (AMP)")
 
     for dataset_name in datasets_list:
-        logger.info(f"\n=== 开始处理数据集：{dataset_name} ===")
+        logger.info(f"\n=== Start processing dataset: {dataset_name} ===")
 
         if dataset_name == 'CIFAR10':
             num_classes = 10
@@ -811,12 +733,11 @@ def main():
             num_classes = 100
             input_channels = 3
         elif dataset_name.lower() == 'imagenetmini':
-            num_classes = 64  # 请根据实际类别数调整
+            num_classes = 64 
             input_channels = 3
         else:
-            raise ValueError("不支持的数据集。")
+            raise ValueError("Unsupported dataset.")
 
-        # 初始化模型并从头训练
         model, model_type = get_model(dataset_name, num_classes=num_classes, input_channels=input_channels)
         model = initialize_model(model, device)
         optimizer = optim.Adam(model.parameters(), lr=args.model_lr)
@@ -824,24 +745,24 @@ def main():
         scheduler = None
         if args.use_scheduler:
             scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
-            logger.info("使用学习率调度器: StepLR")
+            logger.info("Using a learning rate scheduler: StepLR")
 
-        # ========== 方案1：使用 split1 数据训练 ==========
-        logger.info(f"\n--- 方案1：使用 split1 数据训练模型 ---")
+        # ========== Option 1: Train with split1 data ==========
+        logger.info(f"\n--- Option 1: Train the model using split1 data ---")
         try:
             train_loader_scheme1, mean, std = get_dataloader(dataset_name, split='split1',
                                                              batch_size=args.batch_size,
                                                              root_dir=args.root_dir)
         except Exception as e:
-            logger.error(f"加载数据集 {dataset_name} 的 split1 失败: {e}")
+            logger.error(f"Failed to load split1 of dataset {dataset_name}: {e}")
             continue
 
         if len(train_loader_scheme1.dataset) == 0:
-            logger.error("训练数据加载失败，数据集为空。请检查数据划分文件。")
+            logger.error("Training data loading failed, dataset is empty. Please check the data partitioning file.")
             continue
 
-        # Phase 1: 标准训练
-        logger.info(f"\n--- Phase 1: 标准训练 {args.standard_epochs} 轮 ---")
+        # Phase 1: Standard Training
+        logger.info(f"\n--- Phase 1: Standard Training {args.standard_epochs} epoch ---")
         try:
             model = train_standard(
                 model=model,
@@ -853,13 +774,12 @@ def main():
                 scaler=scaler
             )
         except Exception as e:
-            logger.error(f"标准训练过程中发生错误: {e}")
+            logger.error(f"An error occurred during the standard training process: {e}")
             continue
 
-        # Phase 2: 对抗训练
-        logger.info(f"\n--- Phase 2: 对抗训练 {args.conftr_epochs} 轮 ---")
+        # Phase 2: Adversarial training
+        logger.info(f"\n--- Phase 2: Adversarial training {args.conftr_epochs} epoch ---")
         try:
-            # 创建保存目录
             save_scheme = 'phase1_and_phase2'
             save_dir = os.path.join(model_save_root, dataset_name, save_scheme)
             os.makedirs(save_dir, exist_ok=True)
@@ -886,10 +806,10 @@ def main():
                 save_interval=args.save_interval
             )
         except Exception as e:
-            logger.error(f"对抗训练过程中发生错误: {e}")
+            logger.error(f"An error occurred during the adversarial training process: {e}")
             continue
 
-        # 保存最终模型
+        # Save the final model
         try:
             save_model(
                 model=model,
@@ -898,13 +818,13 @@ def main():
                 scheme=save_scheme,
                 model_type=model_type
             )
-            logger.info(f"最终模型已保存")
+            logger.info(f"The final model has been saved")
         except Exception as e:
-            logger.error(f"保存最终模型失败: {e}")
+            logger.error(f"Failed to save the final model: {e}")
 
-        logger.info(f"\n=== 数据集 {dataset_name} 训练已完成 ===")
+        logger.info(f"\n=== Training for dataset {dataset_name} has been completed. ===")
 
-    logger.info("\n====== 所有训练已完成 ======")
+    logger.info("\n====== All training has been completed ======")
 
 
 if __name__ == '__main__':
