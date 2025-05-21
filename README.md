@@ -1,4 +1,3 @@
-# -
 Enhancing Adversarial Robustness with Conformal Prediction: A Framework for Guaranteed Model Reliability
 
 This project introduces an innovative approach to enhancing the robustness and reliability of deep learning models, particularly for high-risk applications. By integrating adversarial training with Conformal Prediction (CP), we formulate a bi-level optimization framework where an attacker and a defender engage in a strategic battle to respectively maximize and minimize model uncertainty.
