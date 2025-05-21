@@ -5,8 +5,11 @@ This project introduces an innovative approach to enhancing the robustness and r
 If you find our article helpful to you, please cite the following article:
 
 @inproceedings{jie2024Enhancing,
-  title={Enhancing Adversarial Robustness with Conformal Prediction: A Framework for Guaranteed Model Reliability},\\
-  year={2024},\\
-  author={Bao, Jie and Zhang, Hanwei and Zhou Zhixin and Dang, Chuangyin and Luo Rui},\\
-  booktitle={Fifty-Two International Conference on Machine Learning}\\
+  title={Enhancing Adversarial Robustness with Conformal Prediction: A Framework for Guaranteed Model Reliability},
+  
+  year={2024},
+  
+  author={Bao, Jie and Zhang, Hanwei and Zhou Zhixin and Dang, Chuangyin and Luo Rui},
+  
+  booktitle={Fifty-Two International Conference on Machine Learning}
 }
