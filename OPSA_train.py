@@ -262,7 +262,7 @@ Returns:
 # ===============================
 # Load data partitioning index
 # ===============================
-def load_split_indices(dataset_name, split='split1', root_dir='/home/kaiyuan/PycharmProjects/icml_adversarial/data_splits'):
+def load_split_indices(dataset_name, split='split1', root_dir='/data_splits'):
     if 'split1' in split or 'scheme1' in split:
         split_num = '1'
     elif 'split2' in split or 'scheme2' in split:
@@ -284,7 +284,7 @@ def load_split_indices(dataset_name, split='split1', root_dir='/home/kaiyuan/Pyc
 # ===============================
 # Definition of Data Loader
 # ===============================
-def get_dataloader(dataset_name, split, batch_size=128, root_dir='/home/kaiyuan/PycharmProjects/icml_adversarial/data_splits'):
+def get_dataloader(dataset_name, split, batch_size=128, root_dir='/data_splits'):
     if dataset_name == 'CIFAR10':
         mean = [0.4914, 0.4822, 0.4465]
         std = [0.2023, 0.1994, 0.2010]
