@@ -10,7 +10,7 @@ If you find our article helpful to you, please cite the following article:
 
   title={Enhancing Adversarial Robustness with Conformal Prediction: A Framework for Guaranteed Model Reliability},
   
-  year={2024},
+  year={2025},
   
   author={Bao, Jie and Zhang, Hanwei and Zhou Zhixin and Dang, Chuangyin and Luo Rui},
   
