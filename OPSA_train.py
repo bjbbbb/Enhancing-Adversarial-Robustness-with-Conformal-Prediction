@@ -517,16 +517,13 @@ Returns:
                     norm=atk_norm
                 )
             except Exception as e:
-                logger.error(f"An error occurred while generating adversarial samples: {e}")
+                logger.error(f"生成对抗样本时发生错误: {e}")
                 continue
 
-            combined_inputs = torch.cat([inputs, inputs_adv], dim=0)
-            combined_labels = torch.cat([labels, labels], dim=0)
-
             split_ratio = 0.5
-            mask = torch.rand(combined_inputs.size(0), device=device) < split_ratio
-            Bcal_inputs, Bcal_labels = combined_inputs[mask], combined_labels[mask]
-            Btrain_inputs, Btrain_labels = combined_inputs[~mask], combined_labels[~mask]
+            mask = torch.rand(inputs_adv.size(0), device=device) < split_ratio
+            Bcal_inputs, Bcal_labels = inputs_adv[mask], labels[mask]
+            Btrain_inputs, Btrain_labels = inputs_adv[~mask], labels[~mask]
 
             with torch.no_grad():
                 if Bcal_inputs.size(0) > 0:
