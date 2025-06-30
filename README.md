@@ -6,14 +6,14 @@ For the CIFAR-10 and CIFAR-100 datasets, a recommendation of $5$ base training e
 
 If you find our article helpful to you, please cite the following article:
 
-@inproceedings{jie2025Enhancing,
+@inproceedings{bao2025enhancing,
 
   title={Enhancing Adversarial Robustness with Conformal Prediction: A Framework for Guaranteed Model Reliability},
   
   year={2025},
   
-  author={Bao, Jie and Zhang, Hanwei and Zhou Zhixin and Dang, Chuangyin and Luo Rui},
+  author={Bao, Jie and Dang, Chuangyin and Luo, Rui and Zhang, Hanwei and Zhou, Zhixin},
   
-  booktitle={Fifty-Two International Conference on Machine Learning}
+  booktitle={Proceedings of the Forty-second International Conference on Machine Learning (ICML)}
   
 }
